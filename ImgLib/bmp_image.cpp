@@ -31,7 +31,7 @@ namespace img_lib {
 	uint32_t header_size;
 	int32_t width;
 	int32_t height;
-	uint16_t plate=1;
+	uint16_t plate = 1;
 	uint16_t bpp = 24;
 	uint32_t type = 0;
 	uint32_t data_bite;
@@ -43,14 +43,16 @@ namespace img_lib {
 		PACKED_STRUCT_END
 
 		// функция вычисления отступа по ширине
-		static int GetBMPStride(int w) {
-		return 4 * ((w * 3 + 3) / 4);
+		static int GetBMPStride(int width) {
+		const int BYTES_PER_PIXEL = 3;
+		const int ALIGNMENT = 4;
+		return ALIGNMENT * ((width * BYTES_PER_PIXEL + (ALIGNMENT - 1)) / ALIGNMENT);
 	}
 	BitmapFileHeader InitBitmapFileHeader(const Image& image) {
 		BitmapFileHeader result;
 		result.sign[0] = 'B';
 		result.sign[1] = 'M';
-		result.offset = sizeof(BitmapFileHeader)+sizeof(BitmapInfoHeader);
+		result.offset = sizeof(BitmapFileHeader) + sizeof(BitmapInfoHeader);
 		result.reserve = 0;
 		result.file_size = GetBMPStride(image.GetWidth()) * image.GetHeight() + result.offset;
 		return result;
@@ -66,26 +68,42 @@ namespace img_lib {
 	}
 
 	// напишите эту функцию
-	bool SaveBMP(const Path& file, const Image& image) {
+	bool img_lib::SaveBMP(const Path& file, const Image& image) {
 		BitmapFileHeader bmp_file_header = InitBitmapFileHeader(image);
 		BitmapInfoHeader bmp_info_header = InitBitmapInfoHeader(image);
-		ofstream bmp_file(file,ios::binary);
+		ofstream bmp_file(file, ios::binary);
 		if (!bmp_file) {
 			return false;
 		}
 		bmp_file.write(reinterpret_cast<char*>(&bmp_file_header), sizeof(BitmapFileHeader));
+		if (bmp_file.fail()) {
+			bmp_file.close();
+			return false;
+		}
 		bmp_file.write(reinterpret_cast<char*>(&bmp_info_header), sizeof(BitmapInfoHeader));
+		if (bmp_file.fail()) {
+			bmp_file.close();
+			return false;
+		}
 		int width = image.GetWidth();
 		int height = image.GetHeight();
 		vector<byte> offset(GetBMPStride(width) - width * 3);
-		for (int y = height-1; y >=0; --y) {
+		for (int y = height - 1; y >= 0; --y) {
 			for (int x = 0; x < width; ++x) {
 				Color ppm_color = image.GetPixel(x, y);
 				BmpColor bmp_color(ppm_color.b, ppm_color.g, ppm_color.r);
 				bmp_file.write(reinterpret_cast<char*>(&bmp_color), sizeof(BmpColor));
+				if (bmp_file.fail()) {
+					bmp_file.close();
+					return false;
+				}
 			}
 			if (offset.size() > 0) {
 				bmp_file.write(reinterpret_cast<char*>(offset.data()), offset.size());
+				if (bmp_file.fail()) {
+					bmp_file.close();
+					return false;
+				}
 			}
 		}
 		bmp_file.close();
@@ -93,13 +111,13 @@ namespace img_lib {
 	}
 
 	// напишите эту функцию
-	Image LoadBMP(const Path& file) {
-	
-		ifstream bmp_file(file,ios::binary);
+	Image img_lib::LoadBMP(const Path& file) {
+
+		ifstream bmp_file(file, ios::binary);
 		if (!bmp_file) {
 			return Image();
 		}
-		
+		const byte alppha = (byte)255;
 		BitmapFileHeader bmp_file_header;
 		bmp_file.read(reinterpret_cast<char*>(&bmp_file_header), sizeof(BitmapFileHeader));
 		if (bmp_file_header.sign[0] != 'B' && bmp_file_header.sign[1] != 'M') {
@@ -107,25 +125,33 @@ namespace img_lib {
 		}
 		BitmapInfoHeader bmp_info_header;
 		bmp_file.read(reinterpret_cast<char*>(&bmp_info_header), sizeof(BitmapInfoHeader));
+		if (bmp_file.fail()) {
+			bmp_file.close();
+			return Image();
+		}
 		int width = bmp_info_header.width;
 		int height = bmp_info_header.height;
 		Image image(width, height, img_lib::Color::Black());
-		int offset = GetBMPStride(width)-3*width;
+		int offset = GetBMPStride(width) - 3 * width;
 		for (int y = 0; y < height; ++y) {
 
 			for (int x = 0; x < width; ++x) {
 				BmpColor bmp_color;
 				bmp_file.read(reinterpret_cast<char*>(&bmp_color), sizeof(BmpColor));
-				img_lib::Color& ppm_color = image.GetPixel(x, height-y-1);
+				if (bmp_file.fail()) {
+					bmp_file.close();
+					return Image();
+				}
+				img_lib::Color& ppm_color = image.GetPixel(x, height - y - 1);
 				ppm_color.r = bmp_color.r;
 				ppm_color.g = bmp_color.g;
 				ppm_color.b = bmp_color.b;
-				ppm_color.a = (byte)255;
+				ppm_color.a = alppha;
 			}
 			bmp_file.ignore(offset);
 		}
 		bmp_file.close();
-	
+
 
 		return image;
 	}
